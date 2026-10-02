@@ -54,12 +54,25 @@ CREATE TABLE t_adr_term_card (
   id bigint PRIMARY KEY,
   bill_no varchar(64),
   node_no int,
-  site_id int,
+  site_id bigint,
   site_no varchar(64),
+  term_code varchar(64),
+  term_name varchar(128),
+  symptom varchar(255),
+  term_level int,
+  parent_code varchar(64),
+  basis_clause varchar(128),
+  refine_items varchar(500),
+  collect_year varchar(16),
+  extend_groups varchar(500),
+  extend_group_count int,
   qty decimal(12,2),
   fine_amt decimal(12,2),
+  open_at datetime,
+  close_at datetime,
   content varchar(255),
   grade_level int,
+  current_flag int DEFAULT 1,
   status int,
   del_flag int DEFAULT 0,
   create_by varchar(64),
@@ -68,6 +81,8 @@ CREATE TABLE t_adr_term_card (
   update_time datetime,
   remark varchar(500)
 );
+CREATE INDEX idx_term_site_term ON t_adr_term_card (site_no, term_code, current_flag);
+CREATE INDEX idx_term_current ON t_adr_term_card (current_flag, del_flag, status);
 
 CREATE TABLE t_adr_check_period (
   id bigint PRIMARY KEY,
