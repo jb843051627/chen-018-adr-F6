@@ -1,6 +1,8 @@
 -- H2（MODE=MySQL）下的对照册领域测试库；列与 doc/schema/adr.sql 对齐。
 DROP TABLE IF EXISTS t_adr_report_row;
 DROP TABLE IF EXISTS t_adr_signal_line;
+DROP TABLE IF EXISTS t_adr_term_card;
+DROP TABLE IF EXISTS t_adr_term_taxon;
 DROP TABLE IF EXISTS t_adr_review_sign;
 DROP TABLE IF EXISTS t_adr_review_bill;
 DROP TABLE IF EXISTS t_sys_notice_user;
@@ -50,24 +52,63 @@ CREATE TABLE t_adr_org_arch (
   remark varchar(500)
 );
 
+CREATE TABLE t_adr_term_taxon (
+  id bigint PRIMARY KEY,
+  term_code varchar(64) NOT NULL,
+  term_name varchar(128) NOT NULL,
+  symptom_words varchar(512),
+  taxon_level int NOT NULL,
+  parent_code varchar(64),
+  own_level int NOT NULL DEFAULT 3,
+  clause_no varchar(64),
+  collect_year int,
+  status int NOT NULL DEFAULT 0,
+  del_flag int NOT NULL DEFAULT 0,
+  create_by varchar(64),
+  create_time datetime,
+  update_by varchar(64),
+  update_time datetime,
+  remark varchar(500),
+  CONSTRAINT uk_term_code UNIQUE (term_code)
+);
+CREATE INDEX idx_taxon_own ON t_adr_term_taxon (own_level, taxon_level, del_flag, status);
+
 CREATE TABLE t_adr_term_card (
   id bigint PRIMARY KEY,
   bill_no varchar(64),
   node_no int,
-  site_id int,
+  family_no varchar(64),
+  version_flag int NOT NULL DEFAULT 0,
+  site_id bigint,
   site_no varchar(64),
+  term_code varchar(64),
+  term_name varchar(128),
+  taxon_level int,
+  parent_code varchar(64),
+  clause_no varchar(64),
+  city_items varchar(512),
+  collect_year int,
+  ext_groups varchar(255),
+  ext_group_count int,
   qty decimal(12,2),
   fine_amt decimal(12,2),
+  valid_start datetime,
+  valid_end datetime,
   content varchar(255),
   grade_level int,
+  own_level int NOT NULL DEFAULT 3,
   status int,
   del_flag int DEFAULT 0,
   create_by varchar(64),
   create_time datetime,
   update_by varchar(64),
   update_time datetime,
-  remark varchar(500)
+  remark varchar(500),
+  CONSTRAINT uk_card_ver UNIQUE (bill_no, node_no)
 );
+CREATE INDEX idx_family_ver ON t_adr_term_card (family_no, version_flag, del_flag);
+CREATE INDEX idx_site_term ON t_adr_term_card (site_no, term_code, del_flag);
+CREATE INDEX idx_own_status ON t_adr_term_card (own_level, version_flag, del_flag, status);
 
 CREATE TABLE t_adr_check_period (
   id bigint PRIMARY KEY,

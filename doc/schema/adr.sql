@@ -247,24 +247,67 @@ CREATE TABLE IF NOT EXISTS t_adr_signal_line (
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='信号检出限值线';
 
+-- 术语分类树：一级套一级，卡挂的术语/系统器官分类都从这里取；号由系统发，不收入工拟的号。
+-- own_level 记这条术语归哪一级用（省1/市2/县3）；检索只摆本级条目；parent_code 给出上位分类码。
+CREATE TABLE IF NOT EXISTS t_adr_term_taxon (
+  id bigint NOT NULL COMMENT '主键',
+  term_code varchar(64) NOT NULL COMMENT '术语编码(系统发,全局唯一)',
+  term_name varchar(128) NOT NULL COMMENT '术语名号',
+  symptom_words varchar(512) DEFAULT NULL COMMENT '症状词(顿号/逗号分隔,供检索)',
+  taxon_level int NOT NULL COMMENT '所在层级 1系统器官分类 2首选术语 3延伸术语',
+  parent_code varchar(64) DEFAULT NULL COMMENT '上位分类码(系统器官分类层即自身术语编码)',
+  own_level int NOT NULL DEFAULT 3 COMMENT '归哪一级用 1省 2市 3县(检索只摆本级)',
+  clause_no varchar(64) DEFAULT NULL COMMENT '设定依据条款号(系统器官分类层立卡时要交)',
+  collect_year int DEFAULT NULL COMMENT '收词年度(首选术语层立卡时要交)',
+  status int NOT NULL DEFAULT 0 COMMENT '情形 0现行 1停用',
+  del_flag int NOT NULL DEFAULT 0 COMMENT '删除标记 0正常 1删除',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  update_by varchar(64) DEFAULT NULL COMMENT '更新者',
+  update_time datetime DEFAULT NULL COMMENT '更新时间',
+  remark varchar(500) DEFAULT NULL COMMENT '备注',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_term_code (term_code),
+  KEY idx_parent (parent_code),
+  KEY idx_own (own_level, taxon_level, del_flag, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='术语分类树';
+
 CREATE TABLE IF NOT EXISTS t_adr_term_card (
   id bigint NOT NULL COMMENT '主键',
-  bill_no varchar(64) DEFAULT NULL COMMENT '术语分类卡号',
-  node_no int DEFAULT NULL COMMENT '本卡版次序',
-  site_id int DEFAULT NULL COMMENT '所属报告单位底册',
-  site_no varchar(64) DEFAULT NULL COMMENT '所属单位底册代号',
-  qty decimal(12,2) DEFAULT NULL COMMENT '本卡年报告份数(份/年)',
-  fine_amt decimal(12,2) DEFAULT NULL COMMENT '本卡复核时限(工作日)',
-  content varchar(255) DEFAULT NULL COMMENT '校验串（随版次序走）',
-  grade_level int DEFAULT NULL COMMENT '年报告份数折到的监督层级',
-  status int DEFAULT NULL COMMENT '进展 0待核对 1已核对 2已冻住',
+  bill_no varchar(64) DEFAULT NULL COMMENT '术语分类卡号(系统发;同卡族各版共用一个号)',
+  node_no int DEFAULT NULL COMMENT '本卡版次序(系统发;1起,改版加一;旧纸卡留空)',
+  family_no varchar(64) DEFAULT NULL COMMENT '卡族号(底册代号+术语编码折出,配平与占名额只认这一对)',
+  version_flag int NOT NULL DEFAULT 0 COMMENT '版层 0现行 1历史(新版一立旧版即挪历史层,日常只见最新版)',
+  site_id bigint DEFAULT NULL COMMENT '所属报告单位底册id(只作冗余;对底册只认site_no)',
+  site_no varchar(64) DEFAULT NULL COMMENT '所属单位底册代号(归类只认这把尺,名号撞着不算)',
+  term_code varchar(64) DEFAULT NULL COMMENT '术语编码(系统发,指向术语分类树)',
+  term_name varchar(128) DEFAULT NULL COMMENT '术语名号(立卡时自分类树带出留痕)',
+  taxon_level int DEFAULT NULL COMMENT '分类层级 1系统器官分类 2首选术语 3延伸术语',
+  parent_code varchar(64) DEFAULT NULL COMMENT '上位分类码(层级1须交:系统器官分类的分类码)',
+  clause_no varchar(64) DEFAULT NULL COMMENT '设定依据条款号(层级1须交)',
+  city_items varchar(512) DEFAULT NULL COMMENT '本市细化那几条(层级2须交;顿号分隔)',
+  collect_year int DEFAULT NULL COMMENT '收词年度(层级2须交)',
+  ext_groups varchar(255) DEFAULT NULL COMMENT '延伸到哪些专业组(层级3须交;顿号分隔)',
+  ext_group_count int DEFAULT NULL COMMENT '延伸专业组一共几组(层级3须交,系统照名单点数)',
+  qty decimal(12,2) DEFAULT NULL COMMENT '本卡年报告份数(份/年;不许零或负)',
+  fine_amt decimal(12,2) DEFAULT NULL COMMENT '本卡复核时限(工作日;不许负)',
+  valid_start datetime DEFAULT NULL COMMENT '开口时刻(不许晚于收口)',
+  valid_end datetime DEFAULT NULL COMMENT '收口时刻(晚于开口才收)',
+  content varchar(255) DEFAULT NULL COMMENT '校验串(走到已核对封一版;改版随新版重算,两版共用一串即错;旧纸卡留空)',
+  grade_level int DEFAULT NULL COMMENT '年报告份数折到的监督层级1..4(系统算,栏上不设手工录入口)',
+  own_level int NOT NULL DEFAULT 3 COMMENT '本级 1省 2市 3县(名录/检索只摆本级)',
+  status int DEFAULT NULL COMMENT '进展 0待核对 1已核对 2已冻住(由系统依已走完级数自数,旧纸卡留空)',
   del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
   create_by varchar(64) DEFAULT NULL COMMENT '创建者',
   create_time datetime DEFAULT NULL COMMENT '创建时间',
   update_by varchar(64) DEFAULT NULL COMMENT '更新者',
   update_time datetime DEFAULT NULL COMMENT '更新时间',
   remark varchar(500) DEFAULT NULL COMMENT '备注',
-  PRIMARY KEY (id)
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_card_ver (bill_no, node_no),
+  KEY idx_family_ver (family_no, version_flag, del_flag),
+  KEY idx_site_term (site_no, term_code, del_flag),
+  KEY idx_own_status (own_level, version_flag, del_flag, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='术语分类卡';
 
 -- 初始底册数据：两条报告单位底册，一条在册、一条已退出。

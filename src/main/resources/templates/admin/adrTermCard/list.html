@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.pollix.at/thymeleaf/shiro">
+<head>
+    <th:block th:include="include :: header('术语分类卡名录')"/>
+</head>
+<body class="pear-container">
+
+<!-- 术语树检索：术语名号/症状词/上位分类码三处开搜；只摆本级翻得着的几条 -->
+<div class="layui-card">
+    <div class="layui-card-body">
+        <form class="layui-form" onsubmit="return false;">
+            <div class="layui-form-item">
+                <label class="layui-form-label">本级</label>
+                <div class="layui-input-inline" style="width:110px">
+                    <select id="ownLevel" lay-filter="ownLevel">
+                        <option value="1">省</option>
+                        <option value="2">市</option>
+                        <option value="3" selected>县</option>
+                    </select>
+                </div>
+                <label class="layui-form-label">术语检索</label>
+                <div class="layui-input-inline" style="width:260px">
+                    <input type="text" id="keyword" placeholder="术语名号 / 症状词 / 上位分类码" class="layui-input">
+                </div>
+                <button class="pear-btn pear-btn-md pear-btn-primary" id="btnSearch">
+                    <i class="layui-icon layui-icon-search"></i> 搜分类
+                </button>
+                <button class="pear-btn pear-btn-md" id="btnReset"><i class="layui-icon layui-icon-refresh"></i> 重置</button>
+            </div>
+        </form>
+        <table id="term-table" lay-filter="term-table" style="display:none"></table>
+    </div>
+</div>
+
+<!-- 本级名录：占数与这一屏的卡同一回算出来，不另点第二回 -->
+<div class="layui-card">
+    <div class="layui-card-body">
+        <blockquote class="layui-elem-quote">
+            本级现行卡 <b id="cntCurrent">-</b> 张，
+            占名额（在走未冻住）<b id="cntOccupied">-</b> 张，
+            已冻住（名额已空出）<b id="cntFrozen">-</b> 张。
+            数与下表同源点算，不凭空补一张，也不盖旧版次。
+        </blockquote>
+        <button shiro:hasPermission="adr:adrTermCard:add" class="pear-btn pear-btn-primary pear-btn-md" id="btnOpen">
+            <i class="layui-icon layui-icon-add-1"></i> 立卡
+        </button>
+        <table id="card-table" lay-filter="card-table"></table>
+    </div>
+</div>
+
+<script th:inline="javascript">
+layui.use(['table', 'layer', 'form'], function () {
+    var MODULE_PATH = rootPath + "/AdrTermCardController/";
+    var table = layui.table;
+    var layer = layui.layer;
+    var form = layui.form;
+    var $ = layui.jquery;
+
+    function ownLevel() { return parseInt($('#ownLevel').val(), 10); }
+
+    // ---- 名录一屏：数与行同回同源 ----
+    function loadRoster() {
+        $.get(MODULE_PATH + 'roster', {ownLevel: ownLevel()}, function (res) {
+            var d = res.data || {};
+            $('#cntCurrent').text(d.currentCount);
+            $('#cntOccupied').text(d.occupiedCount);
+            $('#cntFrozen').text(d.frozenCount);
+            table.render({
+                elem: '#card-table', data: d.cards || [], page: false, even: true,
+                cols: [[
+                    {field: 'billNo', title: '分类卡号', width: 150},
+                    {field: 'nodeNo', title: '版次', width: 70},
+                    {field: 'siteNo', title: '底册代号', width: 110},
+                    {field: 'termName', title: '术语名号', width: 150},
+                    {field: 'taxonLevel', title: '层级', width: 110, templet: function (r) {
+                        return {1: '系统器官分类', 2: '首选术语', 3: '延伸术语'}[r.taxonLevel] || ''; }},
+                    {field: 'qty', title: '年报告份数', width: 100},
+                    {field: 'gradeLevel', title: '监督层级', width: 90, templet: function (r) {
+                        return r.gradeLevel == null ? '' : '第' + r.gradeLevel + '层'; }},
+                    {field: 'fineAmt', title: '复核时限', width: 90},
+                    {field: 'status', title: '当下步子', width: 100, templet: function (r) {
+                        return {0: '待核对', 1: '已核对', 2: '已冻住'}[r.status] || '旧纸卡(空档)'; }},
+                    {title: '操作', width: 250, toolbar: '#card-bar'}
+                ]]
+            });
+        });
+    }
+
+    // ---- 检索：命中带出上位分类码与所在层级 ----
+    $('#btnSearch').on('click', function () {
+        var kw = $.trim($('#keyword').val());
+        if (!kw) { layer.msg('空口不搜'); return; }
+        $.get(MODULE_PATH + 'search', {keyword: kw, ownLevel: ownLevel()}, function (res) {
+            var hits = res.data || [];
+            if (!hits.length) { layer.msg('本级底下空着，不摆空行'); }
+            $('#term-table').show();
+            table.render({
+                elem: '#term-table', data: hits, page: false, even: true,
+                cols: [[
+                    {field: 'termCode', title: '术语编码', width: 150},
+                    {field: 'termName', title: '术语名号', width: 160},
+                    {field: 'symptomWords', title: '症状词', width: 200},
+                    {field: 'taxonLevel', title: '所在层级', width: 120, templet: function (r) {
+                        return {1: '系统器官分类', 2: '首选术语', 3: '延伸术语'}[r.taxonLevel]; }},
+                    {field: 'parentCode', title: '上位分类码(带出)', width: 160},
+                    {title: '用来立卡', width: 120, toolbar: '#term-pick'}
+                ]]
+            });
+        });
+    });
+    $('#btnReset').on('click', function () {
+        $('#keyword').val(''); $('#term-table').hide();
+    });
+    form.on('select(ownLevel)', loadRoster);
+
+    // 点「用它立卡」把术语编码带进立卡单，省得人抄第二遍
+    table.on('tool(term-table)', function (obj) {
+        if (obj.event === 'pick') { openForm(obj.data.termCode); }
+    });
+
+    // ---- 立卡表单（按层级交不同的栏；缺栏由服务层指名） ----
+    function openForm(termCode) {
+        layer.open({
+            type: 1, title: '立一张术语分类卡', area: ['640px', '600px'],
+            content: $('#openTpl').html(),
+            success: function () {
+                if (termCode) { $('input[name="termCode"]').val(termCode); }
+                form.render(null, 'openForm');
+                form.on('select(lv)', function (d) { toggleLv(parseInt(d.value, 10)); });
+            },
+            btn: ['交卡', '取消'], yes: function (i, layero) {
+                var data = {};
+                layero.find('form').serializeArray().forEach(function (p) { if (p.value !== '') data[p.name] = p.value; });
+                $.post(MODULE_PATH + 'open', $.extend(data, {ownLevel: ownLevel()}), function (res) {
+                    if (res.code === 200) { layer.close(i); layer.msg(res.msg, {icon: 1}); loadRoster(); }
+                    else {
+                        var msgs = (res.missing || []).map(function (m) { return '·' + m.label + '：' + m.reason; });
+                        layer.alert((res.msg || '') + '<br>' + msgs.join('<br>'), {title: '卡不进库，缺在这几栏'});
+                    }
+                });
+            }
+        });
+    }
+    function toggleLv(lv) {
+        $('#lv1Box,#lv2Box,#lv3Box').hide();
+        if (lv === 1) $('#lv1Box').show();
+        if (lv === 2) $('#lv2Box').show();
+        if (lv === 3) $('#lv3Box').show();
+    }
+    $('#btnOpen').on('click', function () { openForm(''); });
+
+    // ---- 步子 / 改版 ----
+    table.on('tool(card-table)', function (obj) {
+        var id = obj.data.id;
+        if (obj.event === 'advance') {
+            $.post(MODULE_PATH + 'advance', {id: id}, ok(loadRoster));
+        } else if (obj.event === 'rollback') {
+            $.post(MODULE_PATH + 'rollback', {id: id}, ok(loadRoster));
+        } else if (obj.event === 'revise') {
+            layer.prompt({title: '改版：新的年报告份数（空着沿用旧版）', formType: 0}, function (v, i) {
+                $.post(MODULE_PATH + 'revise', {id: id, qty: v}, function (res) {
+                    layer.close(i); setTimeout(loadRoster, 0);
+                    layer.msg(res.msg, {icon: res.code === 200 ? 1 : 2});
+                });
+            });
+        }
+    });
+    function ok(reload) {
+        return function (res) { layer.msg(res.msg, {icon: res.code === 200 ? 1 : 2}); if (res.code === 200) reload(); };
+    }
+
+    loadRoster();
+});
+</script>
+
+<script type="text/html" id="card-bar">
+    <button class="pear-btn pear-btn-primary pear-btn-xs" lay-event="advance">迈一步</button>
+    <button class="pear-btn pear-btn-warming pear-btn-xs" lay-event="rollback">退一步</button>
+    <button class="pear-btn pear-btn-normal pear-btn-xs" lay-event="revise">改版</button>
+</script>
+<script type="text/html" id="term-pick">
+    <button class="pear-btn pear-btn-primary pear-btn-xs" lay-event="pick">用它立卡</button>
+</script>
+
+<!-- 立卡单：层级不同，交的栏不同 -->
+<script type="text/html" id="openTpl">
+<form class="layui-form" lay-filter="openForm" style="padding:18px">
+    <div class="layui-form-item">
+        <label class="layui-form-label">底册代号</label>
+        <div class="layui-input-block"><input name="siteNo" class="layui-input" placeholder="只认代号这把尺，名号像不算"></div>
+    </div>
+    <div class="layui-form-item">
+        <label class="layui-form-label">术语编码</label>
+        <div class="layui-input-block"><input name="termCode" class="layui-input" placeholder="由检索带出，不由人手编"></div>
+    </div>
+    <div class="layui-form-item">
+        <label class="layui-form-label">分类层级</label>
+        <div class="layui-input-block">
+            <select name="taxonLevel" lay-filter="lv">
+                <option value="">请选层级</option>
+                <option value="1">系统器官分类</option>
+                <option value="2">首选术语</option>
+                <option value="3">延伸术语</option>
+            </select>
+        </div>
+    </div>
+    <div class="layui-form-item">
+        <label class="layui-form-label">年报告份数</label>
+        <div class="layui-input-inline" style="width:120px"><input name="qty" class="layui-input" placeholder="份/年"></div>
+        <label class="layui-form-label">复核时限</label>
+        <div class="layui-input-inline" style="width:120px"><input name="fineAmt" class="layui-input" placeholder="工作日"></div>
+    </div>
+    <div class="layui-form-item">
+        <label class="layui-form-label">开口</label>
+        <div class="layui-input-inline" style="width:160px"><input name="validStart" class="layui-input" placeholder="yyyy-MM-dd HH:mm:ss"></div>
+        <label class="layui-form-label">收口</label>
+        <div class="layui-input-inline" style="width:160px"><input name="validEnd" class="layui-input" placeholder="晚于开口"></div>
+    </div>
+    <div id="lv1Box" style="display:none">
+        <div class="layui-form-item">
+            <label class="layui-form-label">上位分类码</label>
+            <div class="layui-input-block"><input name="parentCode" class="layui-input"></div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">条款号</label>
+            <div class="layui-input-block"><input name="clauseNo" class="layui-input" placeholder="设定依据的条款号"></div>
+        </div>
+    </div>
+    <div id="lv2Box" style="display:none">
+        <div class="layui-form-item">
+            <label class="layui-form-label">本市细化</label>
+            <div class="layui-input-block"><input name="cityItems" class="layui-input" placeholder="几条、顿号分隔"></div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">收词年度</label>
+            <div class="layui-input-block"><input name="collectYear" class="layui-input"></div>
+        </div>
+    </div>
+    <div id="lv3Box" style="display:none">
+        <div class="layui-form-item">
+            <label class="layui-form-label">延伸专业组</label>
+            <div class="layui-input-block"><input name="extGroups" class="layui-input" placeholder="顿号分隔；几组系统数"></div>
+        </div>
+    </div>
+</form>
+</script>
+</body>
+</html>
